@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Markerless AR with AR.js and A-Frame</title>
+    <script src="https://aframe.io/releases/1.2.0/aframe.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
+</head>
+<body style="margin: 0; overflow: hidden;">
+
+<div id="arControls" style="position: absolute; top: 10px; left: 10px; z-index: 9999;">
+    <button id="startARButton" onclick="startAR()">Start AR</button>
+    <button id="endARButton" onclick="endAR()" style="display: none;">End AR</button>
+</div>
+
+<script>
+    var ar = {
+        scene: null,
+        cameraStream: null,
+        imagePlaced: false,
+        arContentURL: '',
+        ip: "https://localhost",
+        port: 3000,
+        route: function() {
+            return this.ip + ":" + this.port;
+        }
+    };
+
+    async function startAR() {
+    // Extract artworkId from the URL query parameter
+    const urlParams = new URLSearchParams(window.location.search);
+    const id = urlParams.get('artworkId');
+    if (id) {
+        try {
+            var artworkSrc = await fetchArtworkImageUrl(id);
+            console.log('Artwork source URL:', artworkSrc);
+
+            var script = document.createElement('script');
+            script.src = 'https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js';
+            script.onload = function() {
+                initializeAR(artworkSrc);
+            };
+            document.head.appendChild(script);
+        } catch (error) {
+            console.error('Error fetching artwork URL:', error);
+        }
+    } else {
+        console.error('No artworkId found in URL');
+    }
+}
+
+
+    function initializeAR(artworkSrc) {
+        ar.scene = document.createElement('a-scene');
+        ar.scene.setAttribute('embedded', '');
+        ar.scene.setAttribute('arjs', `sourceType: webcam; debugUIEnabled: false`);
+        ar.scene.style.width = '100%';
+        ar.scene.style.height = '100%';
+        ar.scene.setAttribute('vr-mode-ui', 'enabled: false'); // Disable VR button
+        document.body.appendChild(ar.scene);
+
+        var camera = document.createElement('a-entity');
+        camera.setAttribute('camera', '');
+        camera.setAttribute('look-controls', ''); // Add look-controls to enable camera rotation
+        camera.setAttribute('position', '0 1 0'); // Adjust camera position
+        camera.setAttribute('fov', '90'); // Adjust field of view
+        ar.scene.appendChild(camera);
+
+        document.getElementById('startARButton').style.display = 'none';
+        document.getElementById('endARButton').style.display = 'block';
+
+        var hammer = new Hammer(ar.scene);
+        hammer.on('tap', function (event) {
+            if (!ar.imagePlaced) {
+                addImage(event,artworkSrc);
+                ar.imagePlaced = true;
+            }
+        });
+    }
+
+    function endAR() {
+        console.log('End AR button clicked');
+        if (ar.scene) {
+            console.log('Stopping AR session...');
+            ar.scene.removeAttribute('arjs');
+
+            navigator.mediaDevices.getUserMedia({ video: true })
+                .then(stream => {
+                    ar.cameraStream = stream;
+                    ar.cameraStream.getTracks().forEach(track => track.stop());
+                })
+                .catch(error => {
+                    console.log('Error releasing camera access:', error);
+                });
+
+            document.body.removeChild(ar.scene);
+
+            ar.scene = null;
+            console.log('AR session ended');
+        } else {
+            console.log('No AR scene to end');
+        }
+
+        document.getElementById('endARButton').style.display = 'none';
+        document.getElementById('startARButton').style.display = 'block';
+
+        ar.imagePlaced = false;
+    }
+
+    function addImage(event, artworkSrc) {
+        console.log('Rendering image in AR scene',artworkSrc);
+
+        var tapX = event.center.x / window.innerWidth * 2 - 1;
+        var tapY = -(event.center.y / window.innerHeight) * 2 + 1;
+
+        var image = document.createElement('a-plane');
+        image.setAttribute('src', artworkSrc);
+        image.setAttribute('width', '1.9');
+        image.setAttribute('height', '1.9');
+        image.setAttribute('position', tapX * 5 + ' ' + (tapY * 5) + ' -15');
+        image.setAttribute('rotation', '0 0 0');
+
+        console.log('Created image element:', image);
+        
+        ar.scene.appendChild(image);
+
+        console.log('Image rendered in AR scene');
+    }
+
+    function extractArtworkIdFromQRCode(qrCodeValue) {
+        var regex = /[?&]artworkId=([^&#]*)/i;
+        var match = regex.exec(qrCodeValue);
+        return match ? match[1] : null;
+    }
+
+    async function fetchArtworkImageUrl(id) {
+    try {
+        const res = await fetch(`${ar.route()}/artworks/image/${id}`, {
+            responseType: 'text'
+        });
+        if (!res.ok) {
+            throw new Error('Failed to fetch artwork');
+        }
+
+        ar.arContentURL = await res.text(); // Assuming the response is the relative path to the image file
+        console.log('Image source URL:', ar.arContentURL); 
+
+        return ar.arContentURL;
+    } catch (error) {
+        console.error('Error fetching artwork:', error);
+    }
+}
+
+
+</script>
+</body>
+</html>
